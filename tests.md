@@ -1,109 +1,123 @@
 # RAG Chatbot Test Results
 
-Topic: Vector Databases, Text Embeddings and RAG
+**Project:** Vector Database and RAG Knowledge Assistant  
+**Test date:** 2026-11-27
 
-## Test 1 — Fact question
+## 1. Automated test results
 
-Question:
-What is a text embedding?
+Test framework: pytest 9.2.0  
+Python version: 3.14.10
 
-Expected answer:
-A numerical representation of text that allows software to compare meaning.
+Latest recorded result: **20 passed, 0 failed**
 
-Actual answer:
-[Record the actual chatbot answer.]
+Coverage includes:
 
-Retrieved source:
-[Record file name and page.]
+- PDF and text extraction
+- Page-break handling
+- Document chunking and overlap
+- Empty document handling
+- Sample document loading
+- Gemini API key validation
+- Empty index validation
+- Retrieval and similarity filtering
+- Retry after temporary API failures
+- Maximum retry attempts
+- Permanent error handling
+- Retry configuration validation
+- Unrelated-number false-positive prevention
+- Unanswerable question fallback
+- Source page preservation
+- Duplicate source page removal
 
-Result:
-[PASS / FAIL]
+Run the automated tests:
 
-## Test 2 — Fact question
+```bash
+python -m pytest -v
+```
 
-Question:
-What does cosine similarity measure?
+## 2. Manual chatbot testing
 
-Expected answer:
-It measures the angular similarity between two vectors.
+These scenarios must be tested against the deployed application.
+Do not mark them as passed until actual chatbot responses are verified.
 
-Actual answer:
-[Record the actual chatbot answer.]
+### Test 1 — Text embeddings
 
-Retrieved source:
-[Record file name and page.]
+Question: What is a text embedding?
 
-Result:
-[PASS / FAIL]
+Expected: A numerical representation of text that allows software to compare meaning.
 
-## Test 3 — Fact question
+Actual answer: Pending live test.
 
-Question:
-What is the purpose of a vector database?
+Retrieved source: Pending live test.
 
-Expected answer:
-It stores vector representations and retrieves similar vectors.
+Result: PENDING
 
-Actual answer:
-[Record the actual chatbot answer.]
+### Test 2 — Cosine similarity
 
-Retrieved source:
-[Record file name and page.]
+Question: What does cosine similarity measure?
 
-Result:
-[PASS / FAIL]
+Expected: It measures the angular similarity between two vectors.
 
-## Test 4 — Fact question
+Actual answer: Pending live test.
 
-Question:
-What are the main phases of a RAG workflow?
+Retrieved source: Pending live test.
 
-Expected answer:
-The indexing phase and the question-answering phase.
+Result: PENDING
 
-Actual answer:
-[Record the actual chatbot answer.]
+### Test 3 — Vector databases
 
-Retrieved source:
-[Record file name and page.]
+Question: What is the purpose of a vector database?
 
-Result:
-[PASS / FAIL]
+Expected: It stores vector representations and retrieves similar vectors.
 
-## Test 5 — Unanswerable question
+Actual answer: Pending live test.
 
-Question:
-Who won the FIFA World Cup in 2022?
+Retrieved source: Pending live test.
 
-Expected answer:
-The chatbot should say that this information is not present in the knowledge base.
+Result: PENDING
 
-Actual answer:
-[Record the actual chatbot answer.]
+### Test 4 — RAG workflow
 
-Retrieved source:
-[Record whether any relevant source was retrieved.]
+Question: What are the main phases of a RAG workflow?
 
-Result:
-[PASS / FAIL]
+Expected: The indexing phase and the question-answering phase.
 
-## Test 6 — Tricky question
+Actual answer: Pending live test.
 
-Question:
-How can a chatbot find a paragraph about semantic retrieval if the user searches using different words?
+Retrieved source: Pending live test.
 
-Expected answer:
-Text embeddings represent meaning as vectors. The question and document chunks can be embedded and compared using similarity search.
+Result: PENDING
 
-Actual answer:
-[Record the actual chatbot answer.]
+### Test 5 — Unanswerable question
 
-Retrieved source:
-[Record file name and page.]
+Question: Who won the FIFA World Cup in 2022?
 
-Result:
-[PASS / FAIL]
+Expected: The chatbot should explain that this information is not present in the uploaded knowledge base.
 
-## Improvements
+Actual answer: Pending live test.
 
-[Write what failed and what you changed after testing.]
+Retrieved source: Pending live test.
+
+Result: PENDING
+
+### Test 6 — Semantic retrieval
+
+Question: How can a chatbot find a paragraph about semantic retrieval if the user searches using different words?
+
+Expected: Text embeddings represent meaning as vectors. The question and document chunks can be embedded and compared using similarity search.
+
+Actual answer: Pending live test.
+
+Retrieved source: Pending live test.
+
+Result: PENDING
+
+## 3. Improvements implemented
+
+- Added retry handling for temporary Gemini API failures.
+- Added exponential backoff.
+- Added retry-attempt validation.
+- Improved HTTP status detection.
+- Added tests for permanent errors and unrelated numbers.
+- Added duplicate source-page removal validation.
+- Preserved document page references in generated answers.

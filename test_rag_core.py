@@ -173,3 +173,191 @@ class TestRAGCore(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_retry_succeeds_after_temporary_failure(monkeypatch):
+    calls = {"count": 0}
+
+    def request():
+        calls["count"] += 1
+        if calls["count"] < 3:
+            raise Exception("503 Service unavailable")
+        return "success"
+
+    monkeypatch.setattr(rag_core.time, "sleep", lambda _: None)
+
+    result = rag_core.call_with_retry(
+        "test operation", request
+    )
+
+    assert result == "success"
+    assert calls["count"] == 3
+
+
+def test_retry_raises_after_maximum_attempts(monkeypatch):
+    calls = {"count": 0}
+    delays = []
+
+    def request():
+        calls["count"] += 1
+        raise Exception("503 Service unavailable")
+
+    monkeypatch.setattr(
+        rag_core.time, "sleep", lambda delay: delays.append(delay)
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="failed after 3 attempts"):
+        rag_core.call_with_retry("test operation", request)
+
+    assert calls["count"] == 3
+    assert delays == [1, 2]
+
+
+def test_retry_does_not_retry_permanent_errors(monkeypatch):
+    calls = {"count": 0}
+
+    def request():
+        calls["count"] += 1
+        raise ValueError("Invalid request")
+
+    monkeypatch.setattr(rag_core.time, "sleep", lambda _: None)
+
+    import pytest
+
+    with pytest.raises(ValueError, match="Invalid request"):
+        rag_core.call_with_retry("test operation", request)
+
+    assert calls["count"] == 1
+
+
+def test_unanswerable_question_returns_fallback(monkeypatch):
+    monkeypatch.setattr(
+        rag_core, "retrieve", lambda *args: []
+    )
+
+    answer, sources = rag_core.ask_question(
+        None, "Unrelated question", {}
+    )
+
+    assert answer == rag_core.FALLBACK
+    assert sources == []
+
+
+def test_answer_generation_preserves_source_pages(monkeypatch):
+    from types import SimpleNamespace
+
+    results = [
+        {
+            "text": "Embeddings represent text meaning.",
+            "source": "embeddings.md",
+            "page": 1,
+            "score": 0.91
+        },
+        {
+            "text": "Vector databases store vectors.",
+            "source": "vectors.md",
+            "page": 2,
+            "score": 0.85
+        }
+    ]
+
+    monkeypatch.setattr(
+        rag_core, "retrieve", lambda *args: results
+    )
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            assert "[1] File: embeddings.md, Page: 1" in kwargs["contents"]
+            assert "[2] File: vectors.md, Page: 2" in kwargs["contents"]
+
+            return SimpleNamespace(
+                text="Embeddings represent meaning [1]."
+            )
+
+    class FakeClient:
+        models = FakeModels()
+
+    answer, sources = rag_core.ask_question(
+        FakeClient(), "What are embeddings?", {}
+    )
+
+    assert "[1]" in answer
+    assert len(sources) == 2
+    assert sources[0]["source"] == "embeddings.md"
+    assert sources[1]["source"] == "vectors.md"
+
+
+def test_retry_validates_max_attempts():
+    import pytest
+
+    with pytest.raises(ValueError):
+        rag_core.call_with_retry("test", lambda: "success", 0)
+
+    with pytest.raises(ValueError):
+        rag_core.call_with_retry("test", lambda: "success", -1)
+
+
+def test_retry_does_not_match_unrelated_numbers(monkeypatch):
+    import pytest
+
+    calls = {"count": 0}
+
+    def request():
+        calls["count"] += 1
+        raise Exception("Document contains the number 1500")
+
+    monkeypatch.setattr(rag_core.time, "sleep", lambda _: None)
+
+    with pytest.raises(Exception, match="1500"):
+        rag_core.call_with_retry("test", request)
+
+    assert calls["count"] == 1
+
+
+def test_answer_generation_removes_duplicate_source_pages(monkeypatch):
+    from types import SimpleNamespace
+
+    results = [
+        {
+            "text": "First chunk",
+            "source": "guide.md",
+            "page": 1,
+            "score": 0.95
+        },
+        {
+            "text": "Second chunk",
+            "source": "guide.md",
+            "page": 1,
+            "score": 0.90
+        },
+        {
+            "text": "Third chunk",
+            "source": "guide.md",
+            "page": 2,
+            "score": 0.85
+        }
+    ]
+
+    monkeypatch.setattr(
+        rag_core, "retrieve", lambda *args: results
+    )
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            return SimpleNamespace(text="Answer [1].")
+
+    class FakeClient:
+        models = FakeModels()
+
+    answer, sources = rag_core.ask_question(
+        FakeClient(), "Explain the guide.", {}
+    )
+
+    assert answer == "Answer [1]."
+    assert len(sources) == 2
+    assert [(s["source"], s["page"]) for s in sources] == [
+        ("guide.md", 1),
+        ("guide.md", 2)
+    ]

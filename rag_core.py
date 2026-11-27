@@ -28,30 +28,61 @@ FALLBACK = (
 
 def call_with_retry(operation, request, max_attempts=3):
     """Retry temporary Gemini API failures with exponential backoff."""
+    if not isinstance(max_attempts, int) or isinstance(max_attempts, bool):
+        raise ValueError("max_attempts must be a positive integer.")
+
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be a positive integer.")
+
+    retryable_statuses = {429, 500, 502, 503, 504}
+
     for attempt in range(max_attempts):
         try:
             return request()
-        except Exception as error:
-            message = str(error)
-            retryable = any(
-                str(status) in message
-                for status in (429, 500, 502, 503, 504)
-            )
 
-            if not retryable or attempt == max_attempts - 1:
-                if retryable:
-                    raise RuntimeError(
-                        f"Gemini {operation} failed after "
-                        f"{max_attempts} attempts. "
-                        f"Please try again later. Details: {error}"
-                    ) from error
+        except Exception as error:
+            # Prefer structured HTTP status information.
+            status_code = None
+
+            for attribute in ("status_code", "code", "status"):
+                value = getattr(error, attribute, None)
+
+                if value is not None:
+                    try:
+                        status_code = int(value)
+                        break
+                    except (TypeError, ValueError):
+                        continue
+
+            # Retain support for exceptions exposing only an error message.
+            if status_code is None:
+                match = re.search(
+                    r"\b(?:HTTP\s*)?(429|500|502|503|504)\b",
+                    str(error),
+                    re.IGNORECASE
+                )
+                if match:
+                    status_code = int(match.group(1))
+
+            retryable = status_code in retryable_statuses
+
+            if not retryable:
                 raise
 
+            if attempt == max_attempts - 1:
+                raise RuntimeError(
+                    f"Gemini {operation} failed after "
+                    f"{max_attempts} attempts. "
+                    f"Please try again later. Details: {error}"
+                ) from error
+
             delay = 2 ** attempt
+
             print(
                 f"[RAG] Gemini {operation} temporarily unavailable. "
                 f"Retrying in {delay}s..."
             )
+
             time.sleep(delay)
 
 

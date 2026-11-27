@@ -101,10 +101,10 @@ https://aistudio.google.com/apikey
 Run automated tests:
 
 ```bash
-python -m unittest -v test_rag_core
+python -m pytest -v
 ```
 
-See `tests.md` for manual chatbot test cases.
+See `tests.md` for automated test results and manual chatbot test cases.
 
 ## Extra Feature
 
