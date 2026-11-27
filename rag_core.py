@@ -337,9 +337,10 @@ def retrieve(client, question, index):
 
 
 def ask_question(client, question, index):
-    """Retrieve evidence and generate an answer grounded in it."""
+    """Generate grounded answers with citations mapped to unique pages."""
     retrieval_started = time.perf_counter()
     results = retrieve(client, question, index)
+
     print(
         f"[RAG] Retrieval + query embedding: "
         f"{time.perf_counter() - retrieval_started:.2f}s"
@@ -348,13 +349,38 @@ def ask_question(client, question, index):
     if not results:
         return FALLBACK, []
 
+    # Group chunks belonging to the same source page.
+    grouped_sources = {}
+
+    for result in results:
+        source_key = (result["source"], result["page"])
+
+        if source_key not in grouped_sources:
+            grouped_sources[source_key] = {
+                "source": result["source"],
+                "page": result["page"],
+                "score": result["score"],
+                "texts": []
+            }
+
+        grouped_sources[source_key]["texts"].append(result["text"])
+        grouped_sources[source_key]["score"] = max(
+            grouped_sources[source_key]["score"],
+            result["score"]
+        )
+
+    unique_sources = list(grouped_sources.values())
+
+    # Assign one citation to each unique source page.
     context_parts = []
 
-    for number, result in enumerate(results, start=1):
+    for number, source in enumerate(unique_sources, start=1):
+        combined_text = "\n\n".join(source["texts"])
+
         context_parts.append(
-            f"[{number}] File: {result['source']}, "
-            f"Page: {result['page']}\n"
-            f"{result['text']}"
+            f"[{number}] File: {source['source']}, "
+            f"Page: {source['page']}\n"
+            f"{combined_text}"
         )
 
     context = "\n\n".join(context_parts)
@@ -370,9 +396,10 @@ STRICT RULES:
 3. If the context does not contain the answer, respond exactly:
    {FALLBACK}
 4. Cite every factual claim using the evidence number, such as [1].
-5. Do not create fake citations.
-6. Explain clearly and simply.
-7. If only part of the question is answered by the context,
+5. Every citation must correspond to an evidence entry.
+6. Do not create fake citations.
+7. Explain clearly and simply.
+8. If only part of the question is answered by the context,
    explain what is supported and what is missing.
 
 CONTEXT:
@@ -403,17 +430,6 @@ GROUNDED ANSWER:
         f"{time.perf_counter() - generation_started:.2f}s"
     )
 
-    answer = response.text or FALLBACK
-
-    # Keep only one displayed source per file and page.
-    unique_sources = []
-    seen_sources = set()
-
-    for result in results:
-        source_key = (result["source"], result["page"])
-
-        if source_key not in seen_sources:
-            seen_sources.add(source_key)
-            unique_sources.append(result)
+    answer = (response.text or "").strip() or FALLBACK
 
     return answer, unique_sources

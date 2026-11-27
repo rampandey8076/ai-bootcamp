@@ -361,3 +361,74 @@ def test_answer_generation_removes_duplicate_source_pages(monkeypatch):
         ("guide.md", 1),
         ("guide.md", 2)
     ]
+
+
+def test_citations_map_to_unique_source_pages(monkeypatch):
+    from types import SimpleNamespace
+
+    results = [
+        {
+            "text": "First part of the guide.",
+            "source": "guide.pdf",
+            "page": 1,
+            "score": 0.95
+        },
+        {
+            "text": "Second part of the guide.",
+            "source": "guide.pdf",
+            "page": 1,
+            "score": 0.90
+        },
+        {
+            "text": "Information from another page.",
+            "source": "guide.pdf",
+            "page": 2,
+            "score": 0.85
+        }
+    ]
+
+    monkeypatch.setattr(
+        rag_core, "retrieve", lambda *args: results
+    )
+
+    captured = {}
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            captured["prompt"] = kwargs["contents"]
+            return SimpleNamespace(
+                text="The guide explains the topic [1]."
+            )
+
+    class FakeClient:
+        models = FakeModels()
+
+    answer, sources = rag_core.ask_question(
+        FakeClient(), "Explain the guide.", {}
+    )
+
+    prompt = captured["prompt"]
+
+    assert "[1] File: guide.pdf, Page: 1" in prompt
+    assert "[2] File: guide.pdf, Page: 2" in prompt
+
+    assert "First part of the guide." in prompt
+    assert "Second part of the guide." in prompt
+
+    assert prompt.count("[1] File:") == 1
+    assert prompt.count("[2] File:") == 1
+    assert "[3] File:" not in prompt
+
+    assert answer == "The guide explains the topic [1]."
+
+    assert len(sources) == 2
+    assert [
+        (source["source"], source["page"])
+        for source in sources
+    ] == [
+        ("guide.pdf", 1),
+        ("guide.pdf", 2)
+    ]
+
+    assert sources[0]["score"] == 0.95
+    assert sources[1]["score"] == 0.85
