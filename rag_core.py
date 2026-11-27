@@ -1,5 +1,6 @@
 import io
 import re
+import time
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,7 @@ from pypdf import PdfReader
 
 
 EMBED_MODEL = "gemini-embedding-001"
-CHAT_MODEL = "gemini-3.8-flash"
+CHAT_MODEL = "gemini-3.5-flash-lite"
 
 CHUNK_SIZE = 180
 CHUNK_OVERLAP = 35
@@ -21,6 +22,37 @@ FALLBACK = (
     "I couldn't find this information in the provided documents. "
     "Please ask a question related to the knowledge base."
 )
+
+
+
+
+def call_with_retry(operation, request, max_attempts=3):
+    """Retry temporary Gemini API failures with exponential backoff."""
+    for attempt in range(max_attempts):
+        try:
+            return request()
+        except Exception as error:
+            message = str(error)
+            retryable = any(
+                str(status) in message
+                for status in (429, 500, 502, 503, 504)
+            )
+
+            if not retryable or attempt == max_attempts - 1:
+                if retryable:
+                    raise RuntimeError(
+                        f"Gemini {operation} failed after "
+                        f"{max_attempts} attempts. "
+                        f"Please try again later. Details: {error}"
+                    ) from error
+                raise
+
+            delay = 2 ** attempt
+            print(
+                f"[RAG] Gemini {operation} temporarily unavailable. "
+                f"Retrying in {delay}s..."
+            )
+            time.sleep(delay)
 
 
 def create_client(api_key):
@@ -158,12 +190,15 @@ def embed_texts(client, texts, task_type):
     for start in range(0, len(texts), BATCH_SIZE):
         batch = texts[start:start + BATCH_SIZE]
 
-        response = client.models.embed_content(
-            model=EMBED_MODEL,
-            contents=batch,
-            config=types.EmbedContentConfig(
-                task_type=task_type,
-                output_dimensionality=768
+        response = call_with_retry(
+            "document embedding",
+            lambda: client.models.embed_content(
+                model=EMBED_MODEL,
+                contents=batch,
+                config=types.EmbedContentConfig(
+                    task_type=task_type,
+                    output_dimensionality=768
+                )
             )
         )
 
@@ -216,12 +251,15 @@ def retrieve(client, question, index):
     if len(vectors) != len(index["chunks"]):
         raise ValueError("Index chunks and vectors do not match.")
 
-    response = client.models.embed_content(
-        model=EMBED_MODEL,
-        contents=question,
-        config=types.EmbedContentConfig(
-            task_type="RETRIEVAL_QUERY",
-            output_dimensionality=768
+    response = call_with_retry(
+        "query embedding",
+        lambda: client.models.embed_content(
+            model=EMBED_MODEL,
+            contents=question,
+            config=types.EmbedContentConfig(
+                task_type="RETRIEVAL_QUERY",
+                output_dimensionality=768
+            )
         )
     )
 
@@ -269,7 +307,12 @@ def retrieve(client, question, index):
 
 def ask_question(client, question, index):
     """Retrieve evidence and generate an answer grounded in it."""
+    retrieval_started = time.perf_counter()
     results = retrieve(client, question, index)
+    print(
+        f"[RAG] Retrieval + query embedding: "
+        f"{time.perf_counter() - retrieval_started:.2f}s"
+    )
 
     if not results:
         return FALLBACK, []
@@ -310,13 +353,23 @@ USER QUESTION:
 GROUNDED ANSWER:
 """
 
-    response = client.models.generate_content(
-        model=CHAT_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.1,
-            max_output_tokens=1000
+    generation_started = time.perf_counter()
+
+    response = call_with_retry(
+        "answer generation",
+        lambda: client.models.generate_content(
+            model=CHAT_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=1000
+            )
         )
+    )
+
+    print(
+        f"[RAG] Gemini answer generation: "
+        f"{time.perf_counter() - generation_started:.2f}s"
     )
 
     answer = response.text or FALLBACK
